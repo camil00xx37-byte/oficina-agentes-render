@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 # Carpeta segura donde los agentes pueden leer/escribir
 WORKSPACE = Path(__file__).parent.parent / "workspace" / "shared"
-WORKSPACE.mkdir(exist_ok=True)
+WORKSPACE.mkdir(parents=True, exist_ok=True)
 
 
 class ReadFileInput(BaseModel):
