@@ -691,14 +691,24 @@ document.getElementById('assistantSend').onclick = () => {
     }));
   } else {
     // Modo simulación
-    setTimeout(() => {
-      appendAssistantMsg('Entendido. He tomado nota y lo coordinaré con el equipo correspondiente. (Modo simulación – conecta el backend para que sea real)', 'assistant');
-    }, 900);
+    document.getElementById('assistantSend').onclick = () => {
+  const inp = document.getElementById('assistantInp');
+  const text = inp.value.trim();
+  if (!text) return;
+  appendAssistantMsg(text, 'user');
+  inp.value = '';
+
+  if (typeof agentConnected !== 'undefined' && agentConnected && agentSocket) {
+    appendAssistantMsg('Recibido. Lo distribuyo y superviso con el equipo.', 'assistant');
+    agentSocket.send(JSON.stringify({
+      type: 'task',
+      text: text,
+      department: 'adm'
+    }));
+  } else {
+    appendAssistantMsg('El backend todavía no está conectado. Espera un momento e intenta de nuevo.', 'assistant');
   }
 };
-document.getElementById('assistantInp').addEventListener('keydown', e => {
-  if (e.key === 'Enter') document.getElementById('assistantSend').click();
-});
 
 // --- Subir archivo ---
 const uploadZone = document.getElementById('uploadZone');
