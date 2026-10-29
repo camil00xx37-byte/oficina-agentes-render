@@ -2,7 +2,7 @@ import sys
 import io
 import traceback
 from contextlib import redirect_stdout, redirect_stderr
-from crewai.tools import BaseTool
+from crewai_tools import BaseTool
 from typing import Type
 from pydantic import BaseModel, Field
 
