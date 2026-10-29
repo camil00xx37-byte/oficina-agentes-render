@@ -60,6 +60,16 @@ function handleAgentEvent(data) {
     if (typeof msg === "function" && typeof asis !== "undefined") {
       msg(asis, data.message || "");
     }
+    try {
+      const box = document.getElementById("assistantChat");
+      if (box && data.message && type !== "connected") {
+        const d = document.createElement("div");
+        d.className = "chat-msg assistant";
+        d.textContent = data.message;
+        box.appendChild(d);
+        box.scrollTop = box.scrollHeight;
+      }
+    } catch(e){}
   }
   else if (type === "task_started") {
     if (typeof msg === "function" && typeof asis !== "undefined") {
@@ -97,6 +107,19 @@ function handleAgentEvent(data) {
       }
     } catch(e){}
 
+    // Mostrar también en el chat modal del Asistente
+    try {
+      const box = document.getElementById("assistantChat");
+      if (box) {
+        const d = document.createElement("div");
+        d.className = "chat-msg assistant";
+        const preview = (data.result || data.assistant_comment || data.message || "").slice(0, 900);
+        d.textContent = (data.success !== false ? "✅ Resultado del equipo:\n" : "❌ Error:\n") + preview;
+        box.appendChild(d);
+        box.scrollTop = box.scrollHeight;
+      }
+    } catch(e){}
+
     try {
       const dep = byId[data.department];
       if (dep && dep.ag) {
@@ -108,6 +131,16 @@ function handleAgentEvent(data) {
     if (typeof msg === "function" && typeof asis !== "undefined") {
       msg(asis, data.message || "");
     }
+    try {
+      const box = document.getElementById("assistantChat");
+      if (box && data.message) {
+        const d = document.createElement("div");
+        d.className = "chat-msg assistant";
+        d.textContent = data.message + (data.comment ? "\n" + String(data.comment).slice(0, 400) : "");
+        box.appendChild(d);
+        box.scrollTop = box.scrollHeight;
+      }
+    } catch(e){}
   }
   else if (type === "meeting_report" || type === "meeting_started") {
     if (data.report && typeof sx !== "undefined" && typeof stex !== "undefined") {
