@@ -22,38 +22,49 @@ CODE_TOOLS = BASE_TOOLS + [code_executor_tool]
 def run_department_task(dept_id: str, task_text: str, on_event=None) -> dict:
     """
     Versión estable:
-    - 1 agente (el jefe)
-    - sin tools (por ahora)
-    - proceso sequential
-    - modelo distinto por departamento
+    - 1 agente
+    - sin tools de CrewAI (evita error de Groq)
+    - si la respuesta trae código/archivo, el backend lo guarda de verdad
     """
+    import re
+    from pathlib import Path
+
     if dept_id not in DEPARTMENTS:
         return {"success": False, "error": f"Departamento desconocido: {dept_id}"}
 
-    # LLM del departamento + Asistente
-    llm = get_llm(dept_id=dept_id)
-    llm_assistant = get_llm(temperature=0.2)  # Asistente con modelo por defecto
+    llm = get_llm(dept_id=dept_id) if "dept_id" in get_llm.__code__.co_varnames else get_llm()
+    llm_assistant = get_llm(temperature=0.2) if "dept_id" in get_llm.__code__.co_varnames else get_llm(temperature=0.2)
 
-    boss, members, info = create_department_agents(dept_id, tools=[], llm=llm)
+    try:
+        boss, members, info = create_department_agents(dept_id, tools=[], llm=llm)
+    except TypeError:
+        boss, members, info = create_department_agents(dept_id, tools=[], llm=llm)
+
     assistant = create_assistant(llm=llm_assistant)
 
     if on_event:
         on_event({
             "type": "status",
             "department": dept_id,
-            "message": f"{info['name']}: el equipo está trabajando..."
+            "message": f"{info['name']}: trabajando..."
         })
 
     work_task = Task(
         description=(
             f"Eres el jefe de {info['name']} ({info['boss']}). "
-            f"Tu especialidad: {info['focus']}.\n\n"
+            f"Especialidad: {info['focus']}.\n\n"
             f"Tarea del usuario:\n{task_text}\n\n"
-            "Responde en español de forma clara y útil. "
-            "Si la tarea es solo un saludo o está incompleta, responde amable y pide más detalle. "
-            "Si es una tarea real, entrega un resultado concreto (texto, plan, pasos o resumen)."
+            "Responde en español de forma clara y útil.\n"
+            "Si te piden crear código o un archivo, incluye el contenido completo "
+            "dentro de un bloque markdown así:\n"
+            "```python\n"
+            "# archivo: nombre.py\n"
+            "código aquí\n"
+            "```\n"
+            "o con el lenguaje que corresponda (javascript, html, markdown, etc.).\n"
+            "Pon siempre en la primera línea del bloque: # archivo: nombre.ext"
         ),
-        expected_output="Respuesta clara y útil en español.",
+        expected_output="Respuesta clara. Si hay archivos, código en bloques markdown con # archivo: nombre.ext",
         agent=boss,
     )
 
@@ -68,35 +79,75 @@ def run_department_task(dept_id: str, task_text: str, on_event=None) -> dict:
         result = crew.kickoff()
         result_text = str(result)
 
-        filename = f"entregable_{dept_id}.md"
+        # --- Guardar archivos reales desde bloques de código ---
+        workspace = Path(__file__).parent.parent / "workspace" / "shared"
+        workspace.mkdir(parents=True, exist_ok=True)
+        saved_files = []
+
+        # Busca bloques ```lang ... ```
+        blocks = re.findall(r"```(\w+)?\n(.*?)```", result_text, re.DOTALL)
+        for i, (lang, content) in enumerate(blocks):
+            content = content.strip()
+            filename = None
+
+            # Primera línea tipo: # archivo: hola.py
+            first_line = content.split("\n", 1)[0].strip()
+            m = re.search(r"#\s*archivo:\s*([^\s]+)", first_line, re.IGNORECASE)
+            if m:
+                filename = m.group(1).strip()
+                # Quitar esa línea del contenido
+                parts = content.split("\n", 1)
+                content = parts[1].strip() if len(parts) > 1 else ""
+            else:
+                ext = {
+                    "python": "py", "py": "py",
+                    "javascript": "js", "js": "js",
+                    "html": "html", "css": "css",
+                    "markdown": "md", "md": "md",
+                    "json": "json", "txt": "txt",
+                }.get((lang or "").lower(), "txt")
+                filename = f"entregable_{dept_id}_{i+1}.{ext}"
+
+            # Seguridad: solo nombre de archivo, sin rutas
+            filename = Path(filename).name
+            path = workspace / filename
+            path.write_text(content, encoding="utf-8")
+            saved_files.append(filename)
+
+        # También guardar el informe completo como .md
+        report_name = f"informe_{dept_id}.md"
+        (workspace / report_name).write_text(result_text, encoding="utf-8")
+        if report_name not in saved_files:
+            saved_files.append(report_name)
+
         file_entry = save_outgoing_file(
-            filename=filename,
+            filename=report_name,
             content=result_text,
             department=info["name"],
             description=f"Resultado de: {task_text[:80]}"
         )
 
         if on_event:
+            msg = f"{info['name']} terminó."
+            if saved_files:
+                msg += f" Archivos: {', '.join(saved_files)}"
             on_event({
                 "type": "status",
                 "department": dept_id,
-                "message": f"{info['name']} terminó. La Asistente está revisando..."
+                "message": msg
             })
 
+        # Revisión Asistente
         review_task = Task(
             description=(
-                f"Como Asistente de Dirección, revisa este entregable de {info['name']}.\n\n"
-                f"Tarea original: {task_text}\n\n"
+                f"Revisa este entregable de {info['name']}.\n"
+                f"Tarea: {task_text}\n\n"
                 f"Entregable:\n{result_text[:4000]}\n\n"
-                "Responde SOLO así:\n"
-                "APROBADO - comentario breve\n"
-                "o\n"
-                "RECHAZADO - qué falta o qué está mal"
+                "Responde SOLO: APROBADO - comentario  O  RECHAZADO - motivo"
             ),
             expected_output="APROBADO o RECHAZADO + comentario breve.",
             agent=assistant,
         )
-
         review_crew = Crew(
             agents=[assistant],
             tasks=[review_task],
@@ -122,15 +173,20 @@ def run_department_task(dept_id: str, task_text: str, on_event=None) -> dict:
                 "message": f"Asistente: {'✅ APROBADO' if approved else '❌ RECHAZADO'} – {info['name']}",
                 "comment": review_result[:400],
                 "file_id": file_entry["id"],
-                "filename": filename,
+                "filename": report_name,
             })
+
+        final_text = result_text
+        if saved_files:
+            final_text += "\n\n📁 Archivos guardados:\n- " + "\n- ".join(saved_files)
 
         return {
             "success": True,
             "department": info["name"],
-            "result": result_text,
+            "result": final_text,
             "file_id": file_entry["id"],
-            "filename": filename,
+            "filename": report_name,
+            "saved_files": saved_files,
             "assistant_approved": approved,
             "assistant_comment": review_result,
         }
@@ -139,7 +195,6 @@ def run_department_task(dept_id: str, task_text: str, on_event=None) -> dict:
         if on_event:
             on_event({"type": "error", "message": str(e)})
         return {"success": False, "error": str(e)}
-
 def run_meeting_reports(on_event=None) -> dict:
     """
     Genera un resumen de reunión con los últimos entregables aprobados
