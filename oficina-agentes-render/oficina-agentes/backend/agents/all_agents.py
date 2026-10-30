@@ -14,22 +14,19 @@ def get_llm(temperature: float = 0.3, dept_id: str = None):
     """
     Devuelve un LLM. Si pasas dept_id, usa un modelo distinto por departamento.
     """
-    # Modelos por departamento (Groq – activos en free/developer)
     MODEL_BY_DEPT = {
-        "ing":  "groq/openai/gpt-oss-120b",   # Ingeniería → más potente
-        "mkt":  "groq/openai/gpt-oss-20b",    # Marketing → rápido/creativo
-        "dis":  "groq/qwen/qwen3.8-27b",      # Diseño → estilo
+        "ing":  "groq/openai/gpt-oss-120b",
+        "mkt":  "groq/openai/gpt-oss-20b",
+        "dis":  "groq/qwen/qwen3.8-27b",
         "ops":  "groq/openai/gpt-oss-20b",
         "rrhh": "groq/openai/gpt-oss-20b",
         "cont": "groq/openai/gpt-oss-20b",
         "adm":  "groq/openai/gpt-oss-20b",
     }
 
-    # Asistente / por defecto
     default_model = os.getenv("GROQ_MODEL", "groq/openai/gpt-oss-20b")
     model = MODEL_BY_DEPT.get(dept_id, default_model) if dept_id else default_model
 
-    # Por si alguien pone el modelo sin el prefijo groq/
     if model and "/" not in model:
         model = f"groq/{model}"
 
@@ -40,11 +37,12 @@ def get_llm(temperature: float = 0.3, dept_id: str = None):
         max_tokens=4096,
     )
 
+
 # ============================================================
 #  ASISTENTE (Dirección) – Poder superior
 # ============================================================
 def create_assistant(llm=None):
-    llm = llm or get_llm(temperature=0.2)  # Asistente usa el default (puedes poner gpt-oss-120b si quieres)
+    llm = llm or get_llm(temperature=0.2)
     return Agent(
         role="Asistente de Dirección",
         goal=(
