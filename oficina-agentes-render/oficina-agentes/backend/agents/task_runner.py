@@ -21,49 +21,46 @@ CODE_TOOLS = BASE_TOOLS + [code_executor_tool]
 
 def run_department_task(dept_id: str, task_text: str, on_event=None) -> dict:
     """
-    Ejecuta una tarea en un departamento y deja el entregable
-    pendiente de aprobación de la Asistente.
+    Versión estable:
+    - 1 agente (el jefe)
+    - sin tools (por ahora)
+    - proceso sequential
+    - modelo distinto por departamento
     """
     if dept_id not in DEPARTMENTS:
         return {"success": False, "error": f"Departamento desconocido: {dept_id}"}
 
-    llm = get_llm()
-    tools = CODE_TOOLS if dept_id == "ing" else BASE_TOOLS
+    # LLM del departamento + Asistente
+    llm = get_llm(dept_id=dept_id)
+    llm_assistant = get_llm(temperature=0.2)  # Asistente con modelo por defecto
 
-    boss, members, info = create_department_agents(dept_id, tools=tools, llm=llm)
-    assistant = create_assistant(llm)
+    boss, members, info = create_department_agents(dept_id, tools=[], llm=llm)
+    assistant = create_assistant(llm=llm_assistant)
 
     if on_event:
         on_event({
             "type": "status",
             "department": dept_id,
-            "message": f"{info['name']}: el equipo está trabajando en la tarea..."
+            "message": f"{info['name']}: el equipo está trabajando..."
         })
 
-    # Tarea del departamento
     work_task = Task(
         description=(
-            f"Tarea asignada al departamento de {info['name']}:\n\n"
-            f"{task_text}\n\n"
-            "Instrucciones:\n"
-            "1. Consulta lecciones aprendidas si es relevante.\n"
-            "2. Investiga lo necesario.\n"
-            "3. Produce el entregable (texto, código, plan, informe...).\n"
-            "4. Si generas archivos, guárdalos con write_file.\n"
-            "5. Prepara un resumen claro de lo realizado para la Asistente de Dirección."
+            f"Eres el jefe de {info['name']} ({info['boss']}). "
+            f"Tu especialidad: {info['focus']}.\n\n"
+            f"Tarea del usuario:\n{task_text}\n\n"
+            "Responde en español de forma clara y útil. "
+            "Si la tarea es solo un saludo o está incompleta, responde amable y pide más detalle. "
+            "Si es una tarea real, entrega un resultado concreto (texto, plan, pasos o resumen)."
         ),
-        expected_output=(
-            "Un entregable completo + un resumen ejecutivo de máximo 1 página "
-            "que la Asistente pueda revisar rápidamente."
-        ),
+        expected_output="Respuesta clara y útil en español.",
         agent=boss,
     )
 
     crew = Crew(
-        agents=[boss] + members,
+        agents=[boss],
         tasks=[work_task],
-        process=Process.hierarchical,
-        manager_llm=llm,
+        process=Process.sequential,
         verbose=True,
     )
 
@@ -71,8 +68,7 @@ def run_department_task(dept_id: str, task_text: str, on_event=None) -> dict:
         result = crew.kickoff()
         result_text = str(result)
 
-        # Guardar el entregable como archivo pendiente de la Asistente
-        filename = f"entregable_{dept_id}_{info['name'].lower().replace(' ', '_')}.md"
+        filename = f"entregable_{dept_id}.md"
         file_entry = save_outgoing_file(
             filename=filename,
             content=result_text,
@@ -84,19 +80,18 @@ def run_department_task(dept_id: str, task_text: str, on_event=None) -> dict:
             on_event({
                 "type": "status",
                 "department": dept_id,
-                "message": f"{info['name']} terminó. Entregable enviado a la Asistente para revisión."
+                "message": f"{info['name']} terminó. La Asistente está revisando..."
             })
 
-        # La Asistente revisa automáticamente (puede aprobar o rechazar)
         review_task = Task(
             description=(
-                f"Como Asistente de Dirección, revisa el siguiente entregable del departamento de {info['name']}.\n\n"
+                f"Como Asistente de Dirección, revisa este entregable de {info['name']}.\n\n"
                 f"Tarea original: {task_text}\n\n"
-                f"Entregable:\n{result_text[:6000]}\n\n"
-                "Decide:\n"
-                "- Si está bien → di exactamente: APROBADO\n"
-                "- Si está mal o incompleto → di exactamente: RECHAZADO y explica qué falta o qué está mal.\n"
-                "Sé exigente pero justa. Solo aprueba trabajo de calidad."
+                f"Entregable:\n{result_text[:4000]}\n\n"
+                "Responde SOLO así:\n"
+                "APROBADO - comentario breve\n"
+                "o\n"
+                "RECHAZADO - qué falta o qué está mal"
             ),
             expected_output="APROBADO o RECHAZADO + comentario breve.",
             agent=assistant,
@@ -108,9 +103,8 @@ def run_department_task(dept_id: str, task_text: str, on_event=None) -> dict:
             process=Process.sequential,
             verbose=True,
         )
-
         review_result = str(review_crew.kickoff())
-        approved = "APROBADO" in review_result.upper() and "RECHAZADO" not in review_result.upper()[:20]
+        approved = "APROBADO" in review_result.upper() and "RECHAZADO" not in review_result.upper()[:15]
 
         from tools.file_manager import assistant_review
         assistant_review(
@@ -145,7 +139,6 @@ def run_department_task(dept_id: str, task_text: str, on_event=None) -> dict:
         if on_event:
             on_event({"type": "error", "message": str(e)})
         return {"success": False, "error": str(e)}
-
 
 def run_meeting_reports(on_event=None) -> dict:
     """
