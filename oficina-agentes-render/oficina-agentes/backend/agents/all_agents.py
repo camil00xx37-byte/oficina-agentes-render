@@ -10,8 +10,29 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def get_llm(temperature: float = 0.3):
-    model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+def get_llm(temperature: float = 0.3, dept_id: str = None):
+    """
+    Devuelve un LLM. Si pasas dept_id, usa un modelo distinto por departamento.
+    """
+    # Modelos por departamento (Groq – activos en free/developer)
+    MODEL_BY_DEPT = {
+        "ing":  "groq/openai/gpt-oss-120b",   # Ingeniería → más potente
+        "mkt":  "groq/openai/gpt-oss-20b",    # Marketing → rápido/creativo
+        "dis":  "groq/qwen/qwen3.8-27b",      # Diseño → estilo
+        "ops":  "groq/openai/gpt-oss-20b",
+        "rrhh": "groq/openai/gpt-oss-20b",
+        "cont": "groq/openai/gpt-oss-20b",
+        "adm":  "groq/openai/gpt-oss-20b",
+    }
+
+    # Asistente / por defecto
+    default_model = os.getenv("GROQ_MODEL", "groq/openai/gpt-oss-20b")
+    model = MODEL_BY_DEPT.get(dept_id, default_model) if dept_id else default_model
+
+    # Por si alguien pone el modelo sin el prefijo groq/
+    if model and "/" not in model:
+        model = f"groq/{model}"
+
     return ChatGroq(
         model=model,
         api_key=os.getenv("GROQ_API_KEY"),
@@ -19,12 +40,11 @@ def get_llm(temperature: float = 0.3):
         max_tokens=4096,
     )
 
-
 # ============================================================
 #  ASISTENTE (Dirección) – Poder superior
 # ============================================================
-def create_assistant(llm=None):
-    llm = llm or get_llm(temperature=0.2)
+ef create_assistant(llm=None):
+    llm = llm or get_llm(temperature=0.2)  # Asistente usa el default (puedes poner gpt-oss-120b si quieres)
     return Agent(
         role="Asistente de Dirección",
         goal=(
@@ -41,7 +61,7 @@ def create_assistant(llm=None):
             "Cuando está bien, lo apruebas y lo presentas de forma ordenada."
         ),
         verbose=True,
-        allow_delegation=True,
+        allow_delegation=False,
         llm=llm,
     )
 
@@ -104,7 +124,7 @@ DEPARTMENTS = {
 
 def create_department_agents(dept_id: str, tools: list = None, llm=None):
     """Crea el jefe + 3 agentes de un departamento."""
-    llm = llm or get_llm()
+    llm = llm or get_llm(dept_id=dept_id)
     tools = tools or []
     info = DEPARTMENTS[dept_id]
 
@@ -117,7 +137,7 @@ def create_department_agents(dept_id: str, tools: list = None, llm=None):
             f"esté listo antes de enviarlo a la Asistente de Dirección para su aprobación."
         ),
         verbose=True,
-        allow_delegation=True,
+        allow_delegation=False,
         llm=llm,
         tools=tools,
     )
