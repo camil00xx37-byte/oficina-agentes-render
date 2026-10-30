@@ -593,7 +593,11 @@ fabMenu.onclick = () => {
 
 fabTools.onclick = (e) => {
   e.stopPropagation();
-  toolsPanel.classList.toggle('open');
+fabTools.addEventListener("click", function(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  toolsPanel.classList.toggle("open");
+});
 };
 
 document.addEventListener('click', (e) => {
