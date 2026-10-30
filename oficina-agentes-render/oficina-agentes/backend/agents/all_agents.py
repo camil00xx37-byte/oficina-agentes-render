@@ -43,7 +43,7 @@ def get_llm(temperature: float = 0.3, dept_id: str = None):
 # ============================================================
 #  ASISTENTE (Dirección) – Poder superior
 # ============================================================
-ef create_assistant(llm=None):
+def create_assistant(llm=None):
     llm = llm or get_llm(temperature=0.2)  # Asistente usa el default (puedes poner gpt-oss-120b si quieres)
     return Agent(
         role="Asistente de Dirección",
