@@ -14,7 +14,6 @@ from tools.code_executor import code_executor_tool
 from tools.file_tools import read_file_tool, write_file_tool, list_files_tool
 from tools.memory_tool import add_lesson_tool, get_lessons_tool
 from tools.google_drive_tools import list_drive_files_tool, read_drive_file_tool, write_drive_file_tool
-load_dotenv()
 
 # ========== MODELO ==========
 def get_llm():
@@ -29,7 +28,7 @@ def get_llm():
 
 # ========== AGENTES ==========
 def create_engineering_agents(llm):
-        common_tools = [
+           common_tools = [
         web_search_tool,
         code_executor_tool,
         read_file_tool,
